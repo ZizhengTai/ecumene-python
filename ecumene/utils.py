@@ -5,6 +5,7 @@ class Promise:
         self._event = Event()
         self._rejected = False
         self._result = None
+        self._retrieved = False
  
     def resolve(self, value):
         self._rejected = False
@@ -17,6 +18,9 @@ class Promise:
         self._event.set()
  
     def future(self):
+        if self._retrieved:
+            raise RuntimeError('future already retrieved')
+        self._retrieved = True
         future = Future(self)
         return future
  

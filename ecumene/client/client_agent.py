@@ -77,7 +77,10 @@ class ClientAgent:
 
                             if call.ecm_key in workers:
                                 # Use existing socket
-                                pass
+
+                                worker = workers[call.ecm_key]
+                                worker.send_string(str(local_id), flags=zmq.SNDMORE)
+                                worker.send(call.args)
                             else:
                                 # Ask Ecumene for new worker
 
@@ -101,7 +104,20 @@ class ClientAgent:
 
                     if status == b'':
                         # Success
-                        pass
+
+                        if ecm_key not in workers:
+                            worker = ctx.socket(zmq.DEALER)
+                            worker.connect(endpoint)
+                            workers[ecm_key] = worker
+
+                            poller.register(worker, flags=zmq.POLLIN)
+
+                            self._calls_lock.acquire()
+                            try:
+                                self._actor_pipe.send_string('$SEND', flags=zmq.SNDMORE)
+                                self._actor_pipe.send_string(str(local_id))
+                            finally:
+                                self._calls_lock.release()
                     elif status == b'U':
                         # Undefined reference
 
@@ -111,13 +127,31 @@ class ClientAgent:
                                 call = self._calls[local_id]
                                 del self._calls[local_id]
                                 call.callback(FunctionCallResult(
-                                    status=FunctionCallResult.Status.UndefinedReference,
+                                    status=b'U',
                                     result=b''))
                         finally:
                             self._calls_lock.release()
             else:
                 # Response from some worker
-                pass
+
+                for worker in workers.values():
+                    if worker in events:
+                        msg = worker.recv_multipart()
+                        if (len(msg) == 3):
+                            local_id = int(msg.pop(0))
+                            status = msg.pop(0)
+                            result = msg.pop(0)
+
+                            self._calls_lock.acquire()
+                            try:
+                                if local_id in self._calls:
+                                    call = self._calls[local_id]
+                                    del self._calls[local_id]
+                                    call.callback(FunctionCallResult(
+                                        status=status,
+                                        result=result))
+                            finally:
+                                self._calls_lock.release()
 
         ecm.close()
         pipe.close()

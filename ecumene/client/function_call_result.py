@@ -9,5 +9,14 @@ class FunctionCallResult:
         UnknownError = 4
 
     def __init__(self, status, result):
-        self.status = status
-        self.result = result
+        self.data = result
+        if status == b'':
+            self.status = FunctionCallResult.Status.Success
+        elif status == b'I':
+            self.status = FunctionCallResult.Status.InvalidArgument
+        elif status == b'U':
+            self.status = FunctionCallResult.Status.UndefinedReference
+        elif status == b'N':
+            self.status = FunctionCallResult.Status.NetworkError
+        else:
+            self.status = FunctionCallResult.Status.UnknownError

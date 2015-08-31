@@ -37,6 +37,7 @@ class Function:
 
         packer = msgpack.Packer()
         buf = BytesIO()
+        buf.write(packer.pack_array_header(len(args)))
         for arg in args:
             Function.__pack(arg, packer, buf)
         buf.seek(0)
@@ -46,9 +47,9 @@ class Function:
             assert(isinstance(result, FunctionCallResult))
 
             if result.status == FunctionCallResult.Status.Success:
-                p.resolve(self._ret_type(Function.__unpack(
+                p.resolve(Function.__unpack(
                     self._ret_type,
-                    msgpack.Unpacker(buf))))
+                    msgpack.Unpacker(BytesIO(result.data))))
             elif result.status == FunctionCallResult.Status.InvalidArgument:
                 p.reject(TypeError('invalid argument to {0}'.format(self.ecm_key)))
             elif result.status == FunctionCallResult.Status.UndefinedReference:
@@ -77,11 +78,15 @@ class Function:
     @staticmethod
     def __pack(x, packer, buf):
         if isinstance(x, list):
-            buf.write(packer.pack_array_header(len(x)))
-            buf.write(packer.pack(x))
+            length = len(x)
+            buf.write(packer.pack_array_header(length))
+            for elem in x:
+                buf.write(packer.pack(elem))
         elif isinstance(x, dict):
-            buf.write(packer.pack_map_header(len(x)))
-            buf.write(packer.pack(x.items(0)))
+            length = len(x)
+            buf.write(packer.pack_map_header(length))
+            for item in x.items():
+                buf.write(packer.pack(item))
         else:
             buf.write(packer.pack(x))
 
@@ -91,12 +96,18 @@ class Function:
             unpacked = unpacker.unpack().decode('utf-8')
         elif issubclass(tpe, list):
             length = unpacker.read_array_header()
-            unpacked = unpacker.unpack()
-            assert(isinstance(unpacked, tpe) and len(unpacker) == length)
+            unpacked = []
+            for i in range(length):
+                unpacked.append(unpacker.unpack())
+            assert(isinstance(unpacked, tpe) and len(unpacked) == length)
         elif issubclass(tpe, dict):
             length = unpacker.read_map_header()
-            unpacked = unpacker.unpack()
+            unpacked = {}
+            for i in range(length):
+                k = unpacker.unpack()
+                v = unpacker.unpack()
+                unpacked[k] = v
             assert(isinstance(unpacked, tpe) and len(unpacked) == length)
         else:
             unpacked = unpacker.unpack()
-        return unpacked
+        return tpe(unpacked)
